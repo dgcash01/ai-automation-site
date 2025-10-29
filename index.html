@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cashion Automation Co. — Smarter Systems. Personal Service.</title>
+    <link rel="stylesheet" href="assets/css/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+
+<body>
+
+    <!-- Background FX: hex grid revealed only by moving spotlight -->
+    <div class="bgfx" aria-hidden="true">
+        <svg class="bgfx__svg" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"
+             viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+            <defs>
+                <!-- Hexagon pattern -->
+                <pattern id="hex" width="46" height="80" patternUnits="userSpaceOnUse">
+                    <polygon points="23,0 46,13 46,40 23,53 0,40 0,13"
+                             fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1"/>
+                </pattern>
+
+                <!-- Soft spotlight mask: white=visible, black=invisible -->
+                <mask id="spotMask" maskUnits="userSpaceOnUse">
+                    <rect width="100%" height="100%" fill="black"/>
+                    <g class="spot">
+                        <!-- Big circle; blur applied via CSS for soft edge -->
+                        <circle cx="0" cy="0" r="260" fill="white"/>
+                    </g>
+                </mask>
+            </defs>
+
+            <!-- Hex grid is only visible where the mask is white (the moving circle) -->
+            <rect width="100%" height="100%" fill="url(#hex)" mask="url(#spotMask)"
+                  style="filter:drop-shadow(0 0 12px rgba(212,168,78,0.4));"/>
+        </svg>
+    </div>
+
+    <!-- Sticky Top Nav -->
+    <nav class="topnav" aria-label="Main">
+        <a href="#" class="brand">Cashion Automation Co.</a>
+        <div class="links">
+            <a href="#how-it-works">How it works</a>
+            <a href="#demo">Demo</a>
+            <a href="#packages">Packages</a>
+            <a href="#contact" class="nav-cta">Book call</a>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <header>
+        <h1>Smarter Systems. Personal Service.</h1>
+        <p>
+            At <strong>Cashion Automation Co.</strong>, we design and build simple AI and automation
+            solutions for small businesses that want to work smarter — not harder.
+            We’re a family-run studio that believes technology should feel human, reliable,
+            and made just for you.
+        </p>
+        <a href="#contact" class="cta">Book a Free Consultation</a>
+    </header>
+
+    <main>
+
+        <!-- How It Works -->
+        <section id="how-it-works" aria-labelledby="how-title">
+            <h2 id="how-title">How It Works</h2>
+            <ol>
+                <li><strong>Discover</strong> — We start by learning how your business runs — what slows you down and
+                    what you’d love to automate.</li>
+                <li><strong>Design</strong> — Our small team creates a clear, simple automation plan tailored to your
+                    goals — no tech jargon, no one-size-fits-all templates.</li>
+                <li><strong>Deliver</strong> — We build, test, and train you to use your new system confidently. You
+                    stay in control while your business runs smoother than ever.</li>
+            </ol>
+        </section>
+
+        <!-- Demo -->
+        <section id="demo" aria-labelledby="demo-title">
+            <h2 id="demo-title">See It in Action</h2>
+            <p>Ask a question like a customer would. The AI will answer using your business FAQs.</p>
+
+            <!-- Demo form -->
+            <form id="demo-form"
+                  hx-post="/api/faq"
+                  hx-trigger="submit"
+                  hx-target="#demo-result"
+                  hx-swap="innerHTML"
+                  class="demo-form">
+                <label for="demo-question" class="sr-only">Your question</label>
+                <input id="demo-question" name="q" type="text" required
+                       placeholder="e.g., What are your hours? Do you offer free estimates?"
+                       autocomplete="off" />
+                <button class="cta" type="submit">Ask</button>
+            </form>
+
+            <!-- Result mount point -->
+            <div id="demo-result" class="demo-result">
+                <div class="demo-hint">Try: "What's your turnaround time?"</div>
+            </div>
+
+            <!-- Fallback if API is not deployed yet -->
+            <noscript>
+                <p><em>Enable JavaScript to try the live demo.</em></p>
+            </noscript>
+        </section>
+
+        <!-- Packages -->
+        <section id="packages" aria-labelledby="packages-title">
+            <h2 id="packages-title">Packages</h2>
+            <table>
+                <tr>
+                    <th>Package</th>
+                    <th>What’s Included</th>
+                    <th>Price</th>
+                </tr>
+                <tr>
+                    <td><strong>Starter System</strong></td>
+                    <td>One custom automation or AI agent + setup session</td>
+                    <td><strong>$997</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Growth System</strong></td>
+                    <td>Full workflow design, setup, and 30-day support</td>
+                    <td><strong>$2,500</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>Ongoing Support</strong></td>
+                    <td>Monthly maintenance, fine-tuning, and updates</td>
+                    <td><strong>From $249/mo</strong></td>
+                </tr>
+            </table>
+            <p style="color:#a9b6cc;margin-top:10px">
+                All packages include personal onboarding and lifetime email support from our family team.
+            </p>
+        </section>
+        <section class="statbar" aria-label="Company highlights">
+            <div class="stat">
+                <span class="num">100% U.S.-Based</span>
+                <span class="label">Family-run studio</span>
+            </div>
+            <div class="stat">
+                <span class="num">15+ yrs</span>
+                <span class="label">combined experience</span>
+            </div>
+            <div class="stat">
+                <span class="num">4.8★</span>
+                <span class="label">client satisfaction</span>
+            </div>
+            <div class="stat">
+                <span class="num">78%</span>
+                <span class="label">repeat engagements</span>
+            </div>
+        </section>
+
+
+    </main>
+
+    <!-- Footer / About -->
+    <footer id="contact" aria-labelledby="contact-title">
+        <h2 id="contact-title">Let’s Automate Something Great</h2>
+        <p>
+            We’re a small, family-run studio based in the Midwest. Our mission is to bring legendary personal service to
+            automation —
+            building tools that save time, simplify work, and help your business grow.
+        </p>
+        <p>
+            📧 <a href="mailto:hello@cashionautomation.com">hello@cashionautomation.com</a><br />
+            🕓 Proudly serving clients across the U.S.
+        </p>
+    </footer>
+
+    <script src="assets/js/app.js"></script>
+</body>
+
+</html>

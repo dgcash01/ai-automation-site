@@ -1,0 +1,12 @@
+{
+  "name": "ai-automation-site",
+  "version": "1.0.0",
+  "description": "Cashion Automation Co. - AI automation services website",
+  "scripts": {
+    "dev": "wrangler pages dev . --port 8788",
+    "deploy": "wrangler pages deploy . --project-name=ai-automation-site"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

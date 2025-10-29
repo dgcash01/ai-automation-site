@@ -1,0 +1,11 @@
+# Files to exclude from Cloudflare Pages deployment
+node_modules/
+.git/
+.wrangler/
+.env
+.env.local
+.DS_Store
+README.md
+DEPLOYMENT.md
+server.js
+package-lock.json

@@ -1,0 +1,6 @@
+name = "ai-automation-site"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "."
+
+# Cloudflare Pages configuration
+# Deploy with: npx wrangler pages deploy . --project-name=ai-automation-site
