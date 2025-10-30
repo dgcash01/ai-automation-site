@@ -130,13 +130,32 @@ function fallbackByIntent(query, faqs) {
   const intent = guessIntent(qTok);
   if (!intent) return null;
 
+  // Stronger fallback: if any keyword from the intent list appears in the FAQ question, return that
   const words = INTENTS[intent].map(stem);
+  const ranked = [];
+
   for (const { q, a } of faqs) {
     const f = normalize(q);
-    if (words.some(w => f.includes(w))) return { q, a };
+    let hits = 0;
+    for (const w of words) if (f.includes(w)) hits++;
+    if (hits) ranked.push({ q, a, hits });
   }
+
+  // If we got any hits, return the FAQ with the most intent matches
+  if (ranked.length) {
+    ranked.sort((a, b) => b.hits - a.hits);
+    return { q: ranked[0].q, a: ranked[0].a };
+  }
+
+  // If nothing matches, fallback to any FAQ containing a stem from the query
+  for (const { q, a } of faqs) {
+    const f = normalize(q);
+    for (const w of qTok) if (f.includes(w)) return { q, a };
+  }
+
   return null;
 }
+
 
 function escapeHtml(s) {
   return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
