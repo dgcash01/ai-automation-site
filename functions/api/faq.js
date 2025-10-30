@@ -1,133 +1,159 @@
 // functions/api/faq.js
-// POST /api/faq  -> returns HTML bubbles with the best-matching FAQ answer.
-// Strategy: (1) deterministic keyword overlap via per-FAQ "keys", then
-//           (2) TF-IDF cosine similarity over the FAQ titles (q) + keys.
+// Cloudflare Pages Function: POST /api/faq
+// Deterministic FAQ matching using explicit "keys" phrases + simple token scoring.
 
 export const onRequestPost = async ({ request, env }) => {
   const form = await request.formData();
-  const query = (form.get("q") || "").toString().trim();
+  const qRaw = (form.get("q") || "").toString();
+  const q = norm(qRaw);
 
-  const faqs = await loadFaqs(env, request);       // [{ q, a, keys? }]
-  const best = matchFAQ(query, faqs);
+  const faqs = await loadFaqs(env, request);
+  const best = pickBest(q, faqs);
 
   const answer = best
     ? best.a
-    : "Great question — this one isn’t in our FAQ yet. We’ll follow up with a tailored answer.";
+    : "Great question — we’ll follow up with a tailored answer.";
+
+  // Optional debug: append ?debug=1 to the page URL to see scoring
+  const debug = new URL(request.url).searchParams.get("debug") === "1";
+  const debugBlock = debug && best?._debug
+    ? `<pre class="demo-hint" style="white-space:pre-wrap">${escapeHtml(JSON.stringify(best._debug, null, 2))}</pre>`
+    : "";
 
   const html = `
     <div class="demo-msg user">
       <div class="avatar">🧑</div>
-      <div class="bubble">${escapeHtml(query || "…")}</div>
+      <div class="bubble">${escapeHtml(qRaw || "…")}</div>
     </div>
     <div class="demo-msg ai">
       <div class="avatar">🤖</div>
       <div class="bubble">${escapeHtml(answer)}</div>
     </div>
+    ${debugBlock}
   `;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 };
 
-/* ---------- Load assets ---------- */
-async function loadFaqs(env, request) {
-  const url = new URL("/data/faqs.json", request.url);
-  const res = await env.ASSETS.fetch(new Request(url.toString(), { method: "GET" }));
-  if (!res.ok) return [];
-  const list = await res.json();
-  // normalize
-  return list
-    .filter(x => x && x.q && x.a)
-    .map(x => ({ q: String(x.q), a: String(x.a), keys: Array.isArray(x.keys) ? x.keys : [] }));
+/* ------------------------------ Matching ------------------------------ */
+
+// Minimal normalization
+function norm(s) {
+  return s.toLowerCase().replace(/["'`]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/* ---------- Matcher ---------- */
-function matchFAQ(query, faqs) {
-  if (!query || !faqs.length) return null;
+// Tiny stemmer (just enough for common variants)
+function stem(w) {
+  if (w.length <= 3) return w;
+  return w
+    .replace(/(ing|ed|es|s)$/g, (m) => (m === "s" && w.endsWith("ss") ? "ss" : ""))
+    .replace(/[^a-z0-9]/g, "");
+}
 
-  // 1) Deterministic keyword overlap (uses per-FAQ "keys")
-  const qTok = tokens(query);
-  let hard = faqs
-    .map(item => {
-      const keySet = tokens((item.keys || []).join(" "));
-      const hits = intersectCount(qTok, keySet);
-      return { item, hits };
-    })
-    .filter(x => x.hits > 0)
-    .sort((a, b) => b.hits - a.hits);
-  if (hard.length) return hard[0].item;
+function tokenSet(s) {
+  return new Set(norm(s).split(" ").filter(Boolean).map(stem));
+}
 
-  // 2) TF-IDF cosine similarity on (question text + keys)
-  const docs = faqs.map(f => (f.q + " " + (f.keys || []).join(" ")));
-  const { idf, vocab } = buildIDF(docs);
-  const docVecs = docs.map(d => tfidfVector(d, idf, vocab));
+// “Keys” can be a string or array. We treat each as a phrase and as tokens.
+function featuresFromFaq(fq) {
+  const keys = Array.isArray(fq.keys) ? fq.keys : fq.keys ? [fq.keys] : [];
+  const keyPhrases = keys.map(norm);
+  const keyTokens = new Set(keys.flatMap(k => norm(k).split(" ").map(stem)).filter(Boolean));
+  const qTokens = tokenSet(fq.q || "");
+  const allTokens = new Set([...keyTokens, ...qTokens]);
+  return { keyPhrases, keyTokens, qTokens, allTokens };
+}
 
-  const qVec = tfidfVector(query, idf, vocab);
-  const scored = docVecs.map((vec, i) => ({ i, score: cosine(vec, qVec) }))
-                        .sort((a, b) => b.score - a.score);
+// Hard synonyms (help the most common demos)
+const SYN = new Map(Object.entries({
+  support: ["help", "maintenance", "mainten", "break", "breaks", "broken", "fix", "repair", "issue", "bug", "warranty", "troubleshoot"],
+  timeline: ["how long", "turnaround", "timeline", "timeframe", "duration", "setup", "set up"],
+  deliver: ["deliver", "delivery", "deadline", "soon", "ship", "when"],
+}));
 
+function expandTokens(ts) {
+  const out = new Set(ts);
+  for (const t of ts) {
+    for (const [head, list] of SYN) {
+      if (t === head || list.includes(t)) {
+        out.add(head);
+        list.forEach(x => out.add(x));
+      }
+    }
+  }
+  return out;
+}
+
+function pickBest(q, faqs) {
+  if (!q) return null;
+
+  const qTokens = expandTokens(tokenSet(q));
+
+  let scored = faqs.map((fq) => {
+    const f = featuresFromFaq(fq);
+
+    // 1) Phrase hit on any key phrase (strongest)
+    const phraseHits = f.keyPhrases.filter(p => p && q.includes(p));
+    const phraseScore = phraseHits.length > 0 ? 3.0 : 0;
+
+    // 2) Token overlap (keys + question tokens)
+    const overlap = intersectSize(qTokens, f.allTokens);
+    const tokenScore = overlap * 0.8;
+
+    // 3) Special quick routes
+    let rulesBonus = 0;
+    if (/\bhow long\b/.test(q)) rulesBonus += 1.0;
+    if (/\bhow soon\b|\bdeliver(y)?\b/.test(q)) rulesBonus += 1.0;
+    if (/\bbreak|broken|fails?|issue|support|maintenance|warranty\b/.test(q)) rulesBonus += 1.0;
+
+    const score = phraseScore + tokenScore + rulesBonus;
+
+    return {
+      score,
+      a: fq.a,
+      _debug: {
+        q,
+        faq_q: fq.q,
+        phraseHits,
+        overlap,
+        tokenScore,
+        rulesBonus,
+        score
+      }
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
   const top = scored[0];
-  // modest floor; adjust if too strict/loose
-  if (top && top.score >= 0.08) return faqs[top.i];
 
-  return null;
-}
-
-/* ---------- TF-IDF helpers ---------- */
-function buildIDF(docs) {
-  const vocab = new Map(); // term -> df
-  docs.forEach(d => {
-    const seen = new Set(tokens(d));
-    seen.forEach(t => vocab.set(t, (vocab.get(t) || 0) + 1));
-  });
-  const N = docs.length;
-  const idf = new Map(); // term -> idf
-  vocab.forEach((df, term) => idf.set(term, Math.log((N + 1) / (df + 1)) + 1)); // smoothed
-  return { idf, vocab: Array.from(vocab.keys()) };
+  // Require a confident score. Phrase hit always counts as confident.
+  if (!top) return null;
+  if (top._debug.phraseHits.length > 0) return top;
+  return top.score >= 2.0 ? top : null;
 }
 
-function tfidfVector(text, idf, vocabList) {
-  const tok = Array.from(tokens(text));
-  if (!tok.length) return new Float32Array(vocabList.length);
-  const tf = new Map();
-  tok.forEach(t => tf.set(t, (tf.get(t) || 0) + 1));
-  // l2-normalized tf-idf
-  const vec = new Float32Array(vocabList.length);
-  let sumSq = 0;
-  vocabList.forEach((term, i) => {
-    const w = (tf.get(term) || 0) * (idf.get(term) || 0);
-    vec[i] = w;
-    sumSq += w * w;
-  });
-  const norm = Math.sqrt(sumSq) || 1;
-  for (let i = 0; i < vec.length; i++) vec[i] /= norm;
-  return vec;
+function intersectSize(A, B) {
+  let n = 0;
+  for (const x of A) if (B.has(x)) n++;
+  return n;
 }
 
-function cosine(a, b) {
-  let dot = 0;
-  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
-  return dot; // vectors are normalized
+/* ------------------------------ Data load ------------------------------ */
+
+async function loadFaqs(env, request) {
+  try {
+    const url = new URL("/data/faqs.json", request.url);
+    const res = await env.ASSETS.fetch(new Request(url.href, { method: "GET" }));
+    if (!res.ok) return [];
+    const data = await res.json();
+    // Ensure array of {q,a,keys?}
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
 }
 
-/* ---------- Text utils ---------- */
-function normalize(s) {
-  return String(s)
-    .toLowerCase()
-    .replace(/[“”"’']/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-const STOP = new Set(["the","a","an","and","or","to","of","for","in","on","with","do","does","is","are","be","if","it","my","your","our","we","you","us","about","at","by","from","as","that","this","can","how"]);
-function stem(w){ return w.replace(/(ing|ers|er|ed|ly|s)$/g,""); }
-function tokens(s){
-  return new Set(
-    normalize(s).split(" ").filter(Boolean).map(stem).filter(t => t && !STOP.has(t))
-  );
-}
-function intersectCount(A, B) {
-  let n = 0; A.forEach(x => { if (B.has(x)) n++; }); return n;
-}
+/* ------------------------------ Utils ------------------------------ */
 
-function escapeHtml(s){
-  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
