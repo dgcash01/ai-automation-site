@@ -5,9 +5,10 @@
 export const onRequestPost = async ({ request, env }) => {
   const form = await request.formData();
   const q = (form.get("q") || "").toString().trim();
-  const faqList = await loadFaqs(env, request);
 
+  const faqList = await loadFaqs(env, request);
   const best = pickBest(q, faqList) || fallbackByIntent(q, faqList);
+
   const answer = best
     ? best.a
     : "Great question — this one isn’t in our FAQ yet. We’ll follow up with a tailored answer.";
@@ -22,10 +23,12 @@ export const onRequestPost = async ({ request, env }) => {
       <div class="bubble">${escapeHtml(answer)}</div>
     </div>
   `;
-  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8" }
+  });
 };
 
-// ---- Load FAQs from asset bundle ----
+// ---------- Assets loader ----------
 async function loadFaqs(env, request) {
   const url = new URL("/data/faqs.json", request.url);
   const res = await env.ASSETS.fetch(new Request(url.toString(), { method: "GET" }));
@@ -33,33 +36,23 @@ async function loadFaqs(env, request) {
   return await res.json();
 }
 
-// ---- Intent + fuzzy helpers ----
-
-// tiny stemmer to align “setup/setups/setting up”, “break/breaks/broken”, etc.
-function stem(w) {
-  return w
-    .replace(/(ing|ers|er|ed|ly|s)$/g, "")   // crude but effective for short nouns/verbs
-    .replace(/[^a-z0-9]/g, "");
+// ---------- Text utils ----------
+function normalize(s) {
+  return s
+    .toLowerCase()
+    .replace(/[“”"’']/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
-
+function stem(w) {
+  return w.replace(/(ing|ers|er|ed|ly|s)$/g, "").replace(/[^a-z0-9]/g, "");
+}
 const STOP = new Set([
   "the","a","an","and","or","to","of","for","in","on","with",
   "do","does","is","are","be","if","it","my","your","our","we",
   "you","us","about","at","by","from","as","that","this","can","how"
 ]);
-
-// canonical intents with wide synonyms
-const INTENTS = {
-  hours:   ["hour","hours","open","when","availability","available","time","schedule"],
-  pricing: ["price","pricing","cost","fee","fees","charge","charges","much"],
-  support: ["support","help","mainten","maintain","break","breaks","broken","fix","fixed","repair","issue","problem","warranty","guarantee","error","bug"],
-  timeline:["timeline","turnaround","deliver","delivery","soon","quick","fast","deadline","schedule","setup","set up","take","completion","timeframe"],
-  consult: ["consult","consultation","call","meeting","book","demo","appointment"]
-};
-
-function normalize(s) {
-  return s.toLowerCase().replace(/[“”"’']/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-}
 function tokens(s) {
   const arr = normalize(s).split(" ").filter(Boolean).map(stem).filter(w => w && !STOP.has(w));
   return new Set(arr);
@@ -79,8 +72,19 @@ function overlap(A, B) {
   let inter = 0; A.forEach(x => { if (B.has(x)) inter++; });
   return inter / Math.max(1, Math.max(A.size, B.size));
 }
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+}
+
+// ---------- Intent dictionary ----------
+const INTENTS = {
+  hours:   ["hour","hours","open","when","availability","available","time","schedule"],
+  pricing: ["price","pricing","cost","fee","fees","charge","charges","much"],
+  support: ["support","help","mainten","maintain","break","breaks","broken","fix","fixed","repair","issue","problem","warranty","guarantee","error","bug"],
+  timeline:["timeline","turnaround","deliver","delivery","soon","quick","fast","deadline","schedule","setup","set up","take","completion","timeframe"],
+  consult: ["consult","consultation","call","meeting","book","demo","appointment"]
+};
 function guessIntent(qTokens) {
-  // returns the best-matching intent key, or null
   let best = null, bestHits = 0;
   for (const [intent, words] of Object.entries(INTENTS)) {
     let hits = 0;
@@ -90,7 +94,7 @@ function guessIntent(qTokens) {
   return bestHits ? best : null;
 }
 
-// ---- Main matcher ----
+// ---------- Matcher ----------
 function pickBest(query, faqs) {
   if (!query) return null;
 
@@ -108,6 +112,7 @@ function pickBest(query, faqs) {
     const sDice = dice(qBi, fBi);
     const sTok  = overlap(qTok, fTok);
 
+    // intent bonus
     let intentBoost = 0;
     if (intent) {
       const intentWords = INTENTS[intent].map(stem);
@@ -116,20 +121,19 @@ function pickBest(query, faqs) {
 
     const score = exact*1.0 + sDice*0.9 + sTok*0.7 + intentBoost;
     return { score, q: fq, a };
-  }).sort((a,b)=>b.score-a.score);
+  }).sort((a, b) => b.score - a.score);
 
   const top = scored[0];
-  // lower threshold a bit for short user questions
   return top && top.score >= 0.12 ? { q: top.q, a: top.a } : null;
 }
 
-// --- semantic + intent fallback ---
+// semantic + intent fallback
 function fallbackByIntent(query, faqs) {
   const qTok = tokens(query);
   const intent = guessIntent(qTok);
   const qStem = [...qTok].map(stem);
 
-  // Try matching by intent words first
+  // 1) by intent words
   if (intent) {
     const words = INTENTS[intent].map(stem);
     const matches = faqs
@@ -139,38 +143,19 @@ function fallbackByIntent(query, faqs) {
         return { q, a, hits };
       })
       .filter(x => x.hits > 0)
-      .sort((a,b)=>b.hits-a.hits);
+      .sort((a, b) => b.hits - a.hits);
     if (matches.length) return { q: matches[0].q, a: matches[0].a };
   }
 
-  // Fallback 2: find FAQ with most stem overlap
+  // 2) by stem overlap
   const matches = faqs
     .map(({ q, a }) => {
       const fTok = tokens(q);
-      const overlap = [...fTok].filter(t => qStem.includes(t)).length;
-      return { q, a, overlap };
+      const ov = [...fTok].filter(t => qStem.includes(t)).length;
+      return { q, a, ov };
     })
-    .filter(x => x.overlap > 0)
-    .sort((a,b)=>b.overlap-a.overlap);
+    .filter(x => x.ov > 0)
+    .sort((a, b) => b.ov - a.ov);
+
   return matches.length ? { q: matches[0].q, a: matches[0].a } : null;
-}
-
-  // If we got any hits, return the FAQ with the most intent matches
-  if (ranked.length) {
-    ranked.sort((a, b) => b.hits - a.hits);
-    return { q: ranked[0].q, a: ranked[0].a };
-  }
-
-  // If nothing matches, fallback to any FAQ containing a stem from the query
-  for (const { q, a } of faqs) {
-    const f = normalize(q);
-    for (const w of qTok) if (f.includes(w)) return { q, a };
-  }
-
-  return null;
-}
-
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
