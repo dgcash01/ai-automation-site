@@ -79,21 +79,27 @@
             </ol>
         </section>
 
-        <!-- Demo -->
         <section id="demo" aria-labelledby="demo-title">
             <h2 id="demo-title">See It in Action</h2>
             <p>Ask a question like a customer would. The AI will answer using your business FAQs.</p>
 
             <!-- Demo form -->
             <form id="demo-form" hx-post="/api/faq" hx-target="#demo-result" hx-swap="innerHTML"
-                hx-headers='{"Cache-Control":"no-cache"}' hx-vals='js:({"_cb": Date.now()})'>
-                <input id="demo-q" type="text" name="q" placeholder="Ask a question…" autocomplete="off" />
+                hx-vals='js:({_cb: Date.now()})' <!-- cache-buster -->
+                >
+                <input id="demo-q" type="text" name="q" <!-- IMPORTANT: server expects name="q" -->
+                placeholder="Ask a question…"
+                autocomplete="off"
+                required
+                />
                 <button type="submit" class="cta">Ask</button>
             </form>
 
-            <div id="demo-result"></div>
+            <!-- Where responses render -->
+            <div id="demo-result" aria-live="polite"></div>
 
             <script>
+                // Tiny UX: show a "thinking…" hint while waiting
                 document.addEventListener('htmx:beforeRequest', (e) => {
                     if (e.target && e.target.id === 'demo-form') {
                         const mount = document.getElementById('demo-result');
@@ -102,11 +108,11 @@
                 });
             </script>
 
-            <!-- Fallback if API is not deployed yet -->
             <noscript>
                 <p><em>Enable JavaScript to try the live demo.</em></p>
             </noscript>
         </section>
+
 
         <!-- Packages -->
         <section id="packages" aria-labelledby="packages-title">
