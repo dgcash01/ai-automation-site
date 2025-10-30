@@ -1,57 +1,72 @@
 // functions/api/faq.js
-export const onRequestPost = async ({ request }) => {
+// Cloudflare Pages Function: POST /api/faq
+// Loads /data/faqs.json from the site assets and returns the best-matching answer.
+
+export const onRequestPost = async ({ request, env }) => {
   const form = await request.formData();
   const q = (form.get("q") || "").toString().trim();
-  if (!q) return html(reply("Please enter a question.")); 
+  const faqList = await loadFaqs(env, request);
 
-  // --- Tiny "FAQ knowledge base" you can edit quickly ---
-  const FAQ = [
-    ["hours", "We’re available Monday–Friday, 9am–5pm (CT)."],
-    ["pricing", "Starter is $997, Growth is $2,500, and support from $249/mo."],
-    ["what do you do", "We design simple AI and automation systems for small businesses."],
-    ["turnaround", "Most starter builds are delivered in 5–7 business days."],
-    ["consultation", "Yes—book a free consult from the top-right button or email us anytime."],
-    ["support", "We offer 30-day handover support and optional monthly maintenance."]
-  ];
+  const best = pickBest(q, faqList);
+  const answer = best
+    ? best.a
+    : "Great question — this one isn’t in our FAQ yet. We’ll follow up with a tailored answer.";
 
-  // --- simple match: score by keyword overlap ---
-  const score = (entry) => {
-    const [key] = entry;
-    const norm = s => s.toLowerCase();
-    return norm(q).includes(norm(key)) ? 2 : // exact keyword hit
-           norm(key).split(" ").some(w => norm(q).includes(w)) ? 1 : 0;
-  };
-
-  let best = FAQ.map(e => [score(e), e]).sort((a,b) => b[0]-a[0])[0];
-  let answer = (best && best[0] > 0) ? best[1][1] 
-    : "Great question—this one isn’t in our FAQ yet. We’ll follow up with a tailored answer.";
-
-  return html(renderConversation(q, answer));
+  const html = `
+    <div class="demo-msg user">
+      <div class="avatar">🧑</div>
+      <div class="bubble">${escapeHtml(q || "…")}</div>
+    </div>
+    <div class="demo-msg ai">
+      <div class="avatar">🤖</div>
+      <div class="bubble">${escapeHtml(answer)}</div>
+    </div>
+  `;
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 };
 
-// --- Helpers: return snippet HTMX will swap into #demo-result ---
-const html = (inner) => new Response(inner, {
-  headers: { "Content-Type": "text/html; charset=utf-8" }
-});
+// ---- Helpers ----
 
-const reply = (text) => `
-  <div class="demo-msg ai">
-    <div class="avatar">🤖</div>
-    <div class="bubble">${escapeHtml(text)}</div>
-  </div>
-`;
+// Load /data/faqs.json from the Pages asset bundle (works in preview & prod)
+async function loadFaqs(env, request) {
+  const url = new URL("/data/faqs.json", request.url);
+  const res = await env.ASSETS.fetch(new Request(url.toString(), { method: "GET" }));
+  if (!res.ok) return [];
+  return await res.json();
+}
 
-const renderConversation = (q, a) => `
-  <div class="demo-msg user">
-    <div class="avatar">🧑</div>
-    <div class="bubble">${escapeHtml(q)}</div>
-  </div>
-  <div class="demo-msg ai">
-    <div class="avatar">🤖</div>
-    <div class="bubble">${escapeHtml(a)}</div>
-  </div>
-`;
+// Simple “smart” match: combines exact hit, token overlap, and Jaccard similarity.
+function pickBest(query, faqs) {
+  if (!query) return null;
+  const q = norm(query);
+  const qTokens = tokens(q);
 
-function escapeHtml(s) {
+  let scored = faqs.map(({ q: fq, a }) => {
+    const f = norm(fq);
+    const fTokens = tokens(f);
+
+    // scores (0..1)
+    const exact = q.includes(f) || f.includes(q) ? 1 : 0;
+    const overlap = intersectSize(qTokens, fTokens) / Math.max(fTokens.size, 1);
+    const jaccard = intersectSize(qTokens, fTokens) / Math.max(unionSize(qTokens, fTokens), 1);
+
+    // weight exact > jaccard > overlap
+    const score = exact * 1.0 + jaccard * 0.7 + overlap * 0.4;
+    return { score, q: fq, a };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored[0];
+
+  // require a modest threshold so we don't return nonsense
+  return top && top.score >= 0.35 ? { q: top.q, a: top.a } : null;
+}
+
+const norm = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+const tokens = (s) => new Set(s.split(" ").filter(Boolean));
+const intersectSize = (A, B) => { let n = 0; A.forEach(t => B.has(t) && n++); return n; };
+const unionSize = (A, B) => { const U = new Set(A); B.forEach(t => U.add(t)); return U.size; };
+
+function escapeHtml(s){
   return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
