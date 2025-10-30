@@ -57,8 +57,25 @@ function normalize(s) {
 }
 
 function tokenize(s) {
-  const t = normalize(s).split(" ").filter(Boolean).filter(w => !STOP.has(w));
-  const out = new Set(t);
+  const norm = normalize(s);
+  const out = new Set();
+
+  // First, check for multi-word phrases in synonyms
+  for (const [k, arr] of SYN) {
+    for (const phrase of arr) {
+      if (phrase.includes(" ") && norm.includes(phrase)) {
+        out.add(k);
+        arr.forEach(v => out.add(v));
+        break;
+      }
+    }
+  }
+
+  // Then tokenize single words
+  const t = norm.split(" ").filter(Boolean).filter(w => !STOP.has(w));
+  t.forEach(w => out.add(w));
+
+  // Expand single-word synonyms
   for (const w of t) {
     for (const [k, arr] of SYN) {
       if (w === k || arr.includes(w)) {
@@ -67,6 +84,7 @@ function tokenize(s) {
       }
     }
   }
+
   return out;
 }
 
@@ -111,7 +129,7 @@ function pickBest(query, faqs) {
   }).sort((a, b) => b.score - a.score);
 
   const top = scored[0];
-  return top && top.score >= 0.20 ? { q: top.q, a: top.a } : null;
+  return top && top.score >= 0.15 ? { q: top.q, a: top.a } : null;
 }
 
 function escapeHtml(s) {
