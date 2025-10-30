@@ -105,10 +105,9 @@ function pickBest(query, faqs) {
     const fBi   = bigrams(fq);
 
     const exact = (qNorm.includes(fNorm) || fNorm.includes(qNorm)) ? 1 : 0;
-    const sDice = dice(qBi, fBi);      // phrase similarity
-    const sTok  = overlap(qTok, fTok); // token overlap
+    const sDice = dice(qBi, fBi);
+    const sTok  = overlap(qTok, fTok);
 
-    // intent bonus if FAQ text contains any word from the detected intent list
     let intentBoost = 0;
     if (intent) {
       const intentWords = INTENTS[intent].map(stem);
@@ -117,29 +116,44 @@ function pickBest(query, faqs) {
 
     const score = exact*1.0 + sDice*0.9 + sTok*0.7 + intentBoost;
     return { score, q: fq, a };
-  }).sort((a, b) => b.score - a.score);
+  }).sort((a,b)=>b.score-a.score);
 
   const top = scored[0];
-  // more forgiving threshold after intent bonus + stemming
-  return top && top.score >= 0.15 ? { q: top.q, a: top.a } : null;
+  // lower threshold a bit for short user questions
+  return top && top.score >= 0.12 ? { q: top.q, a: top.a } : null;
 }
 
-// Fallback: if we still miss, pick a FAQ whose text contains a word from the intent.
+// --- semantic + intent fallback ---
 function fallbackByIntent(query, faqs) {
   const qTok = tokens(query);
   const intent = guessIntent(qTok);
-  if (!intent) return null;
+  const qStem = [...qTok].map(stem);
 
-  // Stronger fallback: if any keyword from the intent list appears in the FAQ question, return that
-  const words = INTENTS[intent].map(stem);
-  const ranked = [];
-
-  for (const { q, a } of faqs) {
-    const f = normalize(q);
-    let hits = 0;
-    for (const w of words) if (f.includes(w)) hits++;
-    if (hits) ranked.push({ q, a, hits });
+  // Try matching by intent words first
+  if (intent) {
+    const words = INTENTS[intent].map(stem);
+    const matches = faqs
+      .map(({ q, a }) => {
+        const f = normalize(q);
+        const hits = words.filter(w => f.includes(w)).length;
+        return { q, a, hits };
+      })
+      .filter(x => x.hits > 0)
+      .sort((a,b)=>b.hits-a.hits);
+    if (matches.length) return { q: matches[0].q, a: matches[0].a };
   }
+
+  // Fallback 2: find FAQ with most stem overlap
+  const matches = faqs
+    .map(({ q, a }) => {
+      const fTok = tokens(q);
+      const overlap = [...fTok].filter(t => qStem.includes(t)).length;
+      return { q, a, overlap };
+    })
+    .filter(x => x.overlap > 0)
+    .sort((a,b)=>b.overlap-a.overlap);
+  return matches.length ? { q: matches[0].q, a: matches[0].a } : null;
+}
 
   // If we got any hits, return the FAQ with the most intent matches
   if (ranked.length) {
