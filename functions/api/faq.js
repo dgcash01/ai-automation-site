@@ -1,13 +1,14 @@
 // functions/api/faq.js
-// Cloudflare Pages Function: POST /api/faq
-// Reads /data/faqs.json and returns the best-matching answer.
+// POST /api/faq  -> returns HTML bubbles with the best-matching FAQ answer.
+// Strategy: (1) deterministic keyword overlap via per-FAQ "keys", then
+//           (2) TF-IDF cosine similarity over the FAQ titles (q) + keys.
 
 export const onRequestPost = async ({ request, env }) => {
   const form = await request.formData();
-  const q = (form.get("q") || "").toString().trim();
+  const query = (form.get("q") || "").toString().trim();
 
-  const faqList = await loadFaqs(env, request);
-  const best = pickBest(q, faqList) || fallbackByIntent(q, faqList);
+  const faqs = await loadFaqs(env, request);       // [{ q, a, keys? }]
+  const best = matchFAQ(query, faqs);
 
   const answer = best
     ? best.a
@@ -16,146 +17,117 @@ export const onRequestPost = async ({ request, env }) => {
   const html = `
     <div class="demo-msg user">
       <div class="avatar">🧑</div>
-      <div class="bubble">${escapeHtml(q || "…")}</div>
+      <div class="bubble">${escapeHtml(query || "…")}</div>
     </div>
     <div class="demo-msg ai">
       <div class="avatar">🤖</div>
       <div class="bubble">${escapeHtml(answer)}</div>
     </div>
   `;
-  return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8" }
-  });
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 };
 
-// ---------- Assets loader ----------
+/* ---------- Load assets ---------- */
 async function loadFaqs(env, request) {
   const url = new URL("/data/faqs.json", request.url);
   const res = await env.ASSETS.fetch(new Request(url.toString(), { method: "GET" }));
   if (!res.ok) return [];
-  return await res.json();
+  const list = await res.json();
+  // normalize
+  return list
+    .filter(x => x && x.q && x.a)
+    .map(x => ({ q: String(x.q), a: String(x.a), keys: Array.isArray(x.keys) ? x.keys : [] }));
 }
 
-// ---------- Text utils ----------
+/* ---------- Matcher ---------- */
+function matchFAQ(query, faqs) {
+  if (!query || !faqs.length) return null;
+
+  // 1) Deterministic keyword overlap (uses per-FAQ "keys")
+  const qTok = tokens(query);
+  let hard = faqs
+    .map(item => {
+      const keySet = tokens((item.keys || []).join(" "));
+      const hits = intersectCount(qTok, keySet);
+      return { item, hits };
+    })
+    .filter(x => x.hits > 0)
+    .sort((a, b) => b.hits - a.hits);
+  if (hard.length) return hard[0].item;
+
+  // 2) TF-IDF cosine similarity on (question text + keys)
+  const docs = faqs.map(f => (f.q + " " + (f.keys || []).join(" ")));
+  const { idf, vocab } = buildIDF(docs);
+  const docVecs = docs.map(d => tfidfVector(d, idf, vocab));
+
+  const qVec = tfidfVector(query, idf, vocab);
+  const scored = docVecs.map((vec, i) => ({ i, score: cosine(vec, qVec) }))
+                        .sort((a, b) => b.score - a.score);
+
+  const top = scored[0];
+  // modest floor; adjust if too strict/loose
+  if (top && top.score >= 0.08) return faqs[top.i];
+
+  return null;
+}
+
+/* ---------- TF-IDF helpers ---------- */
+function buildIDF(docs) {
+  const vocab = new Map(); // term -> df
+  docs.forEach(d => {
+    const seen = new Set(tokens(d));
+    seen.forEach(t => vocab.set(t, (vocab.get(t) || 0) + 1));
+  });
+  const N = docs.length;
+  const idf = new Map(); // term -> idf
+  vocab.forEach((df, term) => idf.set(term, Math.log((N + 1) / (df + 1)) + 1)); // smoothed
+  return { idf, vocab: Array.from(vocab.keys()) };
+}
+
+function tfidfVector(text, idf, vocabList) {
+  const tok = Array.from(tokens(text));
+  if (!tok.length) return new Float32Array(vocabList.length);
+  const tf = new Map();
+  tok.forEach(t => tf.set(t, (tf.get(t) || 0) + 1));
+  // l2-normalized tf-idf
+  const vec = new Float32Array(vocabList.length);
+  let sumSq = 0;
+  vocabList.forEach((term, i) => {
+    const w = (tf.get(term) || 0) * (idf.get(term) || 0);
+    vec[i] = w;
+    sumSq += w * w;
+  });
+  const norm = Math.sqrt(sumSq) || 1;
+  for (let i = 0; i < vec.length; i++) vec[i] /= norm;
+  return vec;
+}
+
+function cosine(a, b) {
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+  return dot; // vectors are normalized
+}
+
+/* ---------- Text utils ---------- */
 function normalize(s) {
-  return s
+  return String(s)
     .toLowerCase()
     .replace(/[“”"’']/g, "")
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
-function stem(w) {
-  return w.replace(/(ing|ers|er|ed|ly|s)$/g, "").replace(/[^a-z0-9]/g, "");
+const STOP = new Set(["the","a","an","and","or","to","of","for","in","on","with","do","does","is","are","be","if","it","my","your","our","we","you","us","about","at","by","from","as","that","this","can","how"]);
+function stem(w){ return w.replace(/(ing|ers|er|ed|ly|s)$/g,""); }
+function tokens(s){
+  return new Set(
+    normalize(s).split(" ").filter(Boolean).map(stem).filter(t => t && !STOP.has(t))
+  );
 }
-const STOP = new Set([
-  "the","a","an","and","or","to","of","for","in","on","with",
-  "do","does","is","are","be","if","it","my","your","our","we",
-  "you","us","about","at","by","from","as","that","this","can","how"
-]);
-function tokens(s) {
-  const arr = normalize(s).split(" ").filter(Boolean).map(stem).filter(w => w && !STOP.has(w));
-  return new Set(arr);
-}
-function bigrams(s) {
-  const t = normalize(s);
-  const bg = new Set();
-  for (let i = 0; i < t.length - 1; i++) bg.add(t.slice(i, i + 2));
-  return bg;
-}
-function dice(a, b) {
-  if (!a.size || !b.size) return 0;
-  let inter = 0; a.forEach(x => { if (b.has(x)) inter++; });
-  return (2 * inter) / (a.size + b.size);
-}
-function overlap(A, B) {
-  let inter = 0; A.forEach(x => { if (B.has(x)) inter++; });
-  return inter / Math.max(1, Math.max(A.size, B.size));
-}
-function escapeHtml(s) {
-  return s.replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+function intersectCount(A, B) {
+  let n = 0; A.forEach(x => { if (B.has(x)) n++; }); return n;
 }
 
-// ---------- Intent dictionary ----------
-const INTENTS = {
-  hours:   ["hour","hours","open","when","availability","available","time","schedule"],
-  pricing: ["price","pricing","cost","fee","fees","charge","charges","much"],
-  support: ["support","help","mainten","maintain","break","breaks","broken","fix","fixed","repair","issue","problem","warranty","guarantee","error","bug"],
-  timeline:["timeline","turnaround","deliver","delivery","soon","quick","fast","deadline","schedule","setup","set up","take","completion","timeframe"],
-  consult: ["consult","consultation","call","meeting","book","demo","appointment"]
-};
-function guessIntent(qTokens) {
-  let best = null, bestHits = 0;
-  for (const [intent, words] of Object.entries(INTENTS)) {
-    let hits = 0;
-    for (const w of words) if (qTokens.has(stem(w))) hits++;
-    if (hits > bestHits) { bestHits = hits; best = intent; }
-  }
-  return bestHits ? best : null;
-}
-
-// ---------- Matcher ----------
-function pickBest(query, faqs) {
-  if (!query) return null;
-
-  const qNorm = normalize(query);
-  const qTok  = tokens(query);
-  const qBi   = bigrams(query);
-  const intent = guessIntent(qTok);
-
-  const scored = faqs.map(({ q: fq, a }) => {
-    const fNorm = normalize(fq);
-    const fTok  = tokens(fq);
-    const fBi   = bigrams(fq);
-
-    const exact = (qNorm.includes(fNorm) || fNorm.includes(qNorm)) ? 1 : 0;
-    const sDice = dice(qBi, fBi);
-    const sTok  = overlap(qTok, fTok);
-
-    // intent bonus
-    let intentBoost = 0;
-    if (intent) {
-      const intentWords = INTENTS[intent].map(stem);
-      for (const w of intentWords) if (fNorm.includes(w)) { intentBoost = 0.25; break; }
-    }
-
-    const score = exact*1.0 + sDice*0.9 + sTok*0.7 + intentBoost;
-    return { score, q: fq, a };
-  }).sort((a, b) => b.score - a.score);
-
-  const top = scored[0];
-  return top && top.score >= 0.12 ? { q: top.q, a: top.a } : null;
-}
-
-// semantic + intent fallback
-function fallbackByIntent(query, faqs) {
-  const qTok = tokens(query);
-  const intent = guessIntent(qTok);
-  const qStem = [...qTok].map(stem);
-
-  // 1) by intent words
-  if (intent) {
-    const words = INTENTS[intent].map(stem);
-    const matches = faqs
-      .map(({ q, a }) => {
-        const f = normalize(q);
-        const hits = words.filter(w => f.includes(w)).length;
-        return { q, a, hits };
-      })
-      .filter(x => x.hits > 0)
-      .sort((a, b) => b.hits - a.hits);
-    if (matches.length) return { q: matches[0].q, a: matches[0].a };
-  }
-
-  // 2) by stem overlap
-  const matches = faqs
-    .map(({ q, a }) => {
-      const fTok = tokens(q);
-      const ov = [...fTok].filter(t => qStem.includes(t)).length;
-      return { q, a, ov };
-    })
-    .filter(x => x.ov > 0)
-    .sort((a, b) => b.ov - a.ov);
-
-  return matches.length ? { q: matches[0].q, a: matches[0].a } : null;
+function escapeHtml(s){
+  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
