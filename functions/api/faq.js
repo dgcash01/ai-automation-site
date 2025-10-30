@@ -111,7 +111,7 @@ function pickBest(query, faqs) {
   }).sort((a, b) => b.score - a.score);
 
   const top = scored[0];
-  return top && top.score >= 0.30 ? { q: top.q, a: top.a } : null;
+  return top && top.score >= 0.20 ? { q: top.q, a: top.a } : null;
 }
 
 function escapeHtml(s) {
