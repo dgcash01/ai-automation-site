@@ -59,7 +59,8 @@ function pickBest(query, faqs) {
   const top = scored[0];
 
   // require a modest threshold so we don't return nonsense
-  return top && top.score >= 0.35 ? { q: top.q, a: top.a } : null;
+  return top && top.score >= 0.15 ? { q: top.q, a: top.a } : null;
+
 }
 
 const norm = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();

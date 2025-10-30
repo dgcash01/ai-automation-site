@@ -14,5 +14,10 @@
   { "q": "How do I get started?", "a": "Simply click 'Book a Free Consultation' at the top of the page, and we'll schedule a discovery call to discuss your needs." },
   { "q": "Are you U.S.-based?", "a": "Yes, we're a locally owned studio based in the Midwest, proudly serving clients across the United States." },
   { "q": "What makes you different from other automation companies?", "a": "We're locally owned, offer personal service, avoid tech jargon, and build custom solutions—not cookie-cutter templates." },
-  { "q": "Can you automate my lead follow-up process?", "a": "Definitely! We can build automated workflows that nurture leads, send follow-ups, and help you close more deals." }
+  { "q": "Can you automate my lead follow-up process?", "a": "Definitely! We can build automated workflows that nurture leads, send follow-ups, and help you close more deals." },
+  { "q": "Do you work with remote teams?", "a": "Yes! We specialize in building automation that works seamlessly for distributed teams, no matter where you're located." },
+  { "q": "How secure is my data?", "a": "Very secure. We follow industry best practices, use encrypted connections, and never store sensitive data unnecessarily." },
+  { "q": "Can I see examples of your work?", "a": "Absolutely! During your free consultation, we'll share relevant case studies and examples that match your business needs." },
+  { "q": "What happens if something breaks?", "a": "We monitor all systems and respond quickly to any issues. Plus, our support plans include troubleshooting and maintenance." },
+  { "q": "Where are you located?", "a": "Our office is located in St. Louis, MO." }
 ]
