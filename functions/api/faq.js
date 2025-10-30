@@ -50,11 +50,11 @@ const STOP = new Set([
 
 // canonical intents with wide synonyms
 const INTENTS = {
-  hours:   ["hour","hours","open","when","availability","available","time"],
+  hours:   ["hour","hours","open","when","availability","available","time","schedule"],
   pricing: ["price","pricing","cost","fee","fees","charge","charges","much"],
-  support: ["support","help","mainten","maintain","break","broken","fix","warranty","guarantee","issue","bug","problem"],
-  timeline:["timeline","turnaround","deliver","delivery","soon","quick","fast","deadline","schedule","setup","take"],
-  consult: ["consult","consultation","call","meeting","book","demo"]
+  support: ["support","help","mainten","maintain","break","breaks","broken","fix","fixed","repair","issue","problem","warranty","guarantee","error","bug"],
+  timeline:["timeline","turnaround","deliver","delivery","soon","quick","fast","deadline","schedule","setup","set up","take","completion","timeframe"],
+  consult: ["consult","consultation","call","meeting","book","demo","appointment"]
 };
 
 function normalize(s) {
@@ -121,7 +121,7 @@ function pickBest(query, faqs) {
 
   const top = scored[0];
   // more forgiving threshold after intent bonus + stemming
-  return top && top.score >= 0.18 ? { q: top.q, a: top.a } : null;
+  return top && top.score >= 0.15 ? { q: top.q, a: top.a } : null;
 }
 
 // Fallback: if we still miss, pick a FAQ whose text contains a word from the intent.
