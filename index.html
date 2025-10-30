@@ -16,28 +16,28 @@
 
     <!-- Background FX: hex grid revealed only by moving spotlight -->
     <div class="bgfx" aria-hidden="true">
-        <svg class="bgfx__svg" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"
-             viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+        <svg class="bgfx__svg" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 1920 1080"
+            preserveAspectRatio="xMidYMid slice">
             <defs>
                 <!-- Hexagon pattern -->
                 <pattern id="hex" width="46" height="80" patternUnits="userSpaceOnUse">
-                    <polygon points="23,0 46,13 46,40 23,53 0,40 0,13"
-                             fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1"/>
+                    <polygon points="23,0 46,13 46,40 23,53 0,40 0,13" fill="none" stroke="#ffffff"
+                        stroke-opacity="0.08" stroke-width="1" />
                 </pattern>
 
                 <!-- Soft spotlight mask: white=visible, black=invisible -->
                 <mask id="spotMask" maskUnits="userSpaceOnUse">
-                    <rect width="100%" height="100%" fill="black"/>
+                    <rect width="100%" height="100%" fill="black" />
                     <g class="spot">
                         <!-- Big circle; blur applied via CSS for soft edge -->
-                        <circle cx="0" cy="0" r="260" fill="white"/>
+                        <circle cx="0" cy="0" r="260" fill="white" />
                     </g>
                 </mask>
             </defs>
 
             <!-- Hex grid is only visible where the mask is white (the moving circle) -->
             <rect width="100%" height="100%" fill="url(#hex)" mask="url(#spotMask)"
-                  style="filter:drop-shadow(0 0 12px rgba(212,168,78,0.4));"/>
+                style="filter:drop-shadow(0 0 12px rgba(212,168,78,0.4));" />
         </svg>
     </div>
 
@@ -85,23 +85,22 @@
             <p>Ask a question like a customer would. The AI will answer using your business FAQs.</p>
 
             <!-- Demo form -->
-            <form id="demo-form"
-                  hx-post="/api/faq"
-                  hx-trigger="submit"
-                  hx-target="#demo-result"
-                  hx-swap="innerHTML"
-                  class="demo-form">
-                <label for="demo-question" class="sr-only">Your question</label>
-                <input id="demo-question" name="q" type="text" required
-                       placeholder="e.g., What are your hours? Do you offer free estimates?"
-                       autocomplete="off" />
-                <button class="cta" type="submit">Ask</button>
+            <form id="demo-form" hx-post="/api/faq" hx-target="#demo-result" hx-swap="innerHTML"
+                hx-headers='{"Cache-Control":"no-cache"}' hx-vals='js:({"_cb": Date.now()})'>
+                <input id="demo-q" type="text" name="q" placeholder="Ask a question…" autocomplete="off" />
+                <button type="submit" class="cta">Ask</button>
             </form>
 
-            <!-- Result mount point -->
-            <div id="demo-result" class="demo-result">
-                <div class="demo-hint">Try: "What's your turnaround time?"</div>
-            </div>
+            <div id="demo-result"></div>
+
+            <script>
+                document.addEventListener('htmx:beforeRequest', (e) => {
+                    if (e.target && e.target.id === 'demo-form') {
+                        const mount = document.getElementById('demo-result');
+                        if (mount) mount.innerHTML = '<div class="demo-hint">Thinking…</div>';
+                    }
+                });
+            </script>
 
             <!-- Fallback if API is not deployed yet -->
             <noscript>
@@ -164,7 +163,8 @@
     <footer id="contact" aria-labelledby="contact-title">
         <h2 id="contact-title">Let’s Automate Something Great</h2>
         <p>
-            We're a small, locally owned studio based in the Midwest. Our mission is to bring legendary personal service to
+            We're a small, locally owned studio based in the Midwest. Our mission is to bring legendary personal service
+            to
             automation —
             building tools that save time, simplify work, and help your business grow.
         </p>
