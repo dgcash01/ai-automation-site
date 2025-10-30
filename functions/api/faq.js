@@ -35,39 +35,85 @@ async function loadFaqs(env, request) {
   return await res.json();
 }
 
-// Simple “smart” match: combines exact hit, token overlap, and Jaccard similarity.
-function pickBest(query, faqs) {
-  if (!query) return null;
-  const q = norm(query);
-  const qTokens = tokens(q);
+// ---- Smarter matching (hybrid fuzzy) ----
+const STOP = new Set([
+  "the","a","an","and","or","to","of","for","in","on","with",
+  "do","does","is","are","be","if","it","my","your","our","we",
+  "you","us","about","at","by","from","as","that","this"
+]);
 
-  let scored = faqs.map(({ q: fq, a }) => {
-    const f = norm(fq);
-    const fTokens = tokens(f);
+const SYN = new Map(Object.entries({
+  hours: ["time","availability","open","when"],
+  pricing: ["price","cost","fee","fees","charge","charges","how much"],
+  support: ["help","maintenance","breaks","broken","fix","warranty","guarantee","issue","bug"],
+  timeline: ["turnaround","how long","delivery","deadline","schedule"],
+  consult: ["consultation","call","meeting","book"],
+  starter: ["starter","basic","entry"],
+  growth: ["growth","full","advanced","complete"]
+}));
 
-    // scores (0..1)
-    const exact = q.includes(f) || f.includes(q) ? 1 : 0;
-    const overlap = intersectSize(qTokens, fTokens) / Math.max(fTokens.size, 1);
-    const jaccard = intersectSize(qTokens, fTokens) / Math.max(unionSize(qTokens, fTokens), 1);
-
-    // weight exact > jaccard > overlap
-    const score = exact * 1.0 + jaccard * 0.7 + overlap * 0.4;
-    return { score, q: fq, a };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  const top = scored[0];
-
-  // require a modest threshold so we don't return nonsense
-  return top && top.score >= 0.15 ? { q: top.q, a: top.a } : null;
-
+function normalize(s) {
+  return s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-const norm = (s) => s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-const tokens = (s) => new Set(s.split(" ").filter(Boolean));
-const intersectSize = (A, B) => { let n = 0; A.forEach(t => B.has(t) && n++); return n; };
-const unionSize = (A, B) => { const U = new Set(A); B.forEach(t => U.add(t)); return U.size; };
+function tokenize(s) {
+  const t = normalize(s).split(" ").filter(Boolean).filter(w => !STOP.has(w));
+  const out = new Set(t);
+  for (const w of t) {
+    for (const [k, arr] of SYN) {
+      if (w === k || arr.includes(w)) {
+        out.add(k);
+        arr.forEach(v => out.add(v));
+      }
+    }
+  }
+  return out;
+}
 
-function escapeHtml(s){
-  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function bigrams(s) {
+  const t = normalize(s);
+  const bg = new Set();
+  for (let i = 0; i < t.length - 1; i++) bg.add(t.slice(i, i + 2));
+  return bg;
+}
+
+function dice(a, b) {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  a.forEach(x => { if (b.has(x)) inter++; });
+  return (2 * inter) / (a.size + b.size);
+}
+
+function overlap(A, B) {
+  let inter = 0;
+  A.forEach(x => { if (B.has(x)) inter++; });
+  return inter / Math.max(1, Math.max(A.size, B.size));
+}
+
+// pickBest using hybrid score: exact > dice > token overlap
+function pickBest(query, faqs) {
+  if (!query) return null;
+  const qNorm = normalize(query);
+  const qTok = tokenize(query);
+  const qBi = bigrams(query);
+
+  const scored = faqs.map(({ q: fq, a }) => {
+    const fNorm = normalize(fq);
+    const fTok = tokenize(fq);
+    const fBi = bigrams(fq);
+
+    const exact = (qNorm.includes(fNorm) || fNorm.includes(qNorm)) ? 1 : 0;
+    const sDice = dice(qBi, fBi);
+    const sTok = overlap(qTok, fTok);
+
+    const score = exact * 1.0 + sDice * 0.9 + sTok * 0.7;
+    return { score, q: fq, a };
+  }).sort((a, b) => b.score - a.score);
+
+  const top = scored[0];
+  return top && top.score >= 0.30 ? { q: top.q, a: top.a } : null;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
