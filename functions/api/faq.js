@@ -61,12 +61,13 @@ function tokenize(s) {
   const out = new Set();
 
   // First, check for multi-word phrases in synonyms
+  let foundPhrase = false;
   for (const [k, arr] of SYN) {
     for (const phrase of arr) {
       if (phrase.includes(" ") && norm.includes(phrase)) {
         out.add(k);
         arr.forEach(v => out.add(v));
-        break;
+        foundPhrase = true;
       }
     }
   }
@@ -88,19 +89,6 @@ function tokenize(s) {
   return out;
 }
 
-function bigrams(s) {
-  const t = normalize(s);
-  const bg = new Set();
-  for (let i = 0; i < t.length - 1; i++) bg.add(t.slice(i, i + 2));
-  return bg;
-}
-
-function dice(a, b) {
-  if (!a.size || !b.size) return 0;
-  let inter = 0;
-  a.forEach(x => { if (b.has(x)) inter++; });
-  return (2 * inter) / (a.size + b.size);
-}
 
 function overlap(A, B) {
   let inter = 0;
@@ -108,28 +96,29 @@ function overlap(A, B) {
   return inter / Math.max(1, Math.max(A.size, B.size));
 }
 
-// pickBest using hybrid score: exact > dice > token overlap
+// pickBest using hybrid score: token overlap is primary
 function pickBest(query, faqs) {
   if (!query) return null;
   const qNorm = normalize(query);
   const qTok = tokenize(query);
-  const qBi = bigrams(query);
 
   const scored = faqs.map(({ q: fq, a }) => {
     const fNorm = normalize(fq);
     const fTok = tokenize(fq);
-    const fBi = bigrams(fq);
 
-    const exact = (qNorm.includes(fNorm) || fNorm.includes(qNorm)) ? 1 : 0;
-    const sDice = dice(qBi, fBi);
+    // Token overlap is the strongest signal
     const sTok = overlap(qTok, fTok);
 
-    const score = exact * 1.0 + sDice * 0.9 + sTok * 0.7;
+    // Exact substring match is a bonus
+    const exact = (qNorm.includes(fNorm) || fNorm.includes(qNorm)) ? 0.5 : 0;
+
+    const score = sTok + exact;
+
     return { score, q: fq, a };
   }).sort((a, b) => b.score - a.score);
 
   const top = scored[0];
-  return top && top.score >= 0.15 ? { q: top.q, a: top.a } : null;
+  return top && top.score >= 0.1 ? { q: top.q, a: top.a } : null;
 }
 
 function escapeHtml(s) {
