@@ -1,0 +1,18 @@
+[
+  { "q": "What are your hours?", "a": "We're available Monday–Friday, 9am–5pm (CT)." },
+  { "q": "What do you do?", "a": "We design simple AI + automation systems for small businesses—fast, reliable, and easy to run." },
+  { "q": "How much does it cost?", "a": "Starter $997, Growth $2,500, and ongoing support from $249/mo." },
+  { "q": "Turnaround time?", "a": "Most starter builds are delivered in 5–7 business days." },
+  { "q": "Do you offer a consultation?", "a": "Yes—book a free 15–30 minute discovery call from the top-right button." },
+  { "q": "Support included?", "a": "30-day handover support is included; optional monthly maintenance is available." },
+  { "q": "Can you integrate with my existing tools?", "a": "Absolutely! We work with popular platforms like Zapier, HubSpot, Salesforce, Google Workspace, and many more." },
+  { "q": "Do I need technical knowledge to use your systems?", "a": "Not at all. We design everything to be user-friendly and provide full training so you feel confident from day one." },
+  { "q": "What industries do you serve?", "a": "We work with service businesses, e-commerce stores, professional services, real estate, healthcare, and more." },
+  { "q": "Can you help with customer service automation?", "a": "Yes! We build AI chatbots, automated email responses, and smart ticketing systems to improve your customer experience." },
+  { "q": "Do you offer payment plans?", "a": "Yes, we offer flexible payment options for our Growth package. Contact us to discuss what works best for you." },
+  { "q": "What if I need changes after launch?", "a": "No problem! The first 30 days include adjustments. After that, our monthly support plans cover updates and improvements." },
+  { "q": "How do I get started?", "a": "Simply click 'Book a Free Consultation' at the top of the page, and we'll schedule a discovery call to discuss your needs." },
+  { "q": "Are you U.S.-based?", "a": "Yes, we're a locally owned studio based in the Midwest, proudly serving clients across the United States." },
+  { "q": "What makes you different from other automation companies?", "a": "We're locally owned, offer personal service, avoid tech jargon, and build custom solutions—not cookie-cutter templates." },
+  { "q": "Can you automate my lead follow-up process?", "a": "Definitely! We can build automated workflows that nurture leads, send follow-ups, and help you close more deals." }
+]
